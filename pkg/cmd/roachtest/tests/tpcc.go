@@ -2047,6 +2047,8 @@ func runTPCCPublished(
 	settings := install.MakeClusterSettings()
 	settings.NumRacks = crdbNodeCount
 	startOpts := option.DefaultStartOpts()
+	const maxSyncDur = 300 * time.Second
+	settings.Env = append(settings.Env, fmt.Sprintf("COCKROACH_LOG_MAX_SYNC_DURATION=%s", maxSyncDur))
 	// Higher concurrency to avoid IO overload.
 	if opts.optimized {
 		settings.Env = append(settings.Env, "COCKROACH_ROCKSDB_CONCURRENCY=4")
@@ -2081,6 +2083,7 @@ func runTPCCPublished(
 			db := c.Conn(ctx, t.L(), 1)
 			// Temporarily set this high to allow the partitioning to finish fast.
 			_, _ = db.ExecContext(ctx, `SET CLUSTER SETTING kv.snapshot_rebalance.max_rate = '256 MiB'`)
+			_, _ = db.ExecContext(ctx, `SET CLUSTER SETTING server.goroutine_dump.num_goroutines_threshold = '10000000'`)
 			// These are too aggressive and impactful for the test to pass. Consider
 			// re-enabling them in the future once they cause a smaller impact.
 			if opts.optimized {
