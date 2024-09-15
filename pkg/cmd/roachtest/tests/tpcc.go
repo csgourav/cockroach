@@ -1004,12 +1004,43 @@ func registerTPCC(r registry.Registry) {
 		EncryptionSupport: registry.EncryptionAlwaysDisabled,
 		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
 			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
-				warehouses:        3000,
+				warehouses:        5000,
 				workloadCount:     1,
 				duration:          1 * time.Minute,
 				optimized:         true,
-				LoadWarehousesGCE: 2500,
-				LoadWarehousesAWS: 2500,
+				LoadWarehousesGCE: 3000,
+				LoadWarehousesAWS: 3000,
+			})
+		},
+	})
+	// Note: Top one for adding more workloads
+	// Try on medium with 3 workload nodes, see if we can
+	// achieve similar performance
+	r.Add(registry.TestSpec{
+		Name:      "tpcc/published/medium-opt-multiworkloads",
+		Owner:     registry.OwnerKV,
+		Benchmark: true,
+		Cluster: spec.MakeClusterSpec(
+			18,
+			spec.AWSMachineType("c5d.4xlarge"),
+			//spec.GCEMachineType("n2-custom-16-32768"),
+			spec.GCEMachineType("n2-standard-16"),
+			spec.WorkloadNode(),
+			spec.PreferLocalSSD(),
+			spec.ReuseNone(),
+		),
+		CompatibleClouds:  registry.AllClouds,
+		Suites:            registry.ManualOnly,
+		EncryptionSupport: registry.EncryptionAlwaysDisabled,
+		Timeout:           6 * time.Hour,
+		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
+			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
+				warehouses:        20000,
+				workloadCount:     3,
+				duration:          30 * time.Minute,
+				optimized:         true,
+				LoadWarehousesGCE: 19800,
+				LoadWarehousesAWS: 19800,
 			})
 		},
 	})
@@ -1039,8 +1070,8 @@ func registerTPCC(r registry.Registry) {
 				workloadCount:     1,
 				duration:          30 * time.Minute,
 				optimized:         true,
-				LoadWarehousesGCE: 15000,
-				LoadWarehousesAWS: 15000,
+				LoadWarehousesGCE: 19000,
+				LoadWarehousesAWS: 19000,
 			})
 		},
 	})
@@ -1063,11 +1094,11 @@ func registerTPCC(r registry.Registry) {
 		Timeout:           6 * time.Hour,
 		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
 			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
-				warehouses:        12000,
+				warehouses:        16000,
 				workloadCount:     1,
 				duration:          30 * time.Minute,
-				LoadWarehousesGCE: 10000,
-				LoadWarehousesAWS: 10000,
+				LoadWarehousesGCE: 14000,
+				LoadWarehousesAWS: 14000,
 			})
 		},
 	})
@@ -2224,6 +2255,7 @@ func runTPCCPublished(
 	initStepSize := precision
 	s := search.NewLineSearcher(1, opts.warehouses, opts.LoadWarehousesGCE, initStepSize, precision)
 	iteration := 0
+	totalWarehouses := opts.warehouses
 	res, err := s.Search(func(warehouses int) (bool, error) {
 		iteration++
 		t.L().Printf("initializing cluster for %d warehouses (search attempt: %d)", warehouses, iteration)
@@ -2247,9 +2279,11 @@ func runTPCCPublished(
 				histogramsPath := fmt.Sprintf("%s/warehouses=%d/stats.json", t.PerfArtifactsDir(), warehouses)
 				var cmd string
 				cmd = fmt.Sprintf(
-					"./cockroach workload run tpcc --warehouses=%d"+
+					"./cockroach1 workload run tpcc --warehouses=%d --active-warehouses=%d --workers=%d"+
 						" --histograms=%s --ramp=%s --duration=%s",
+					totalWarehouses,
 					warehouses,
+					((warehouses * 10) / 3),
 					histogramsPath,
 					rampTime,
 					opts.duration,

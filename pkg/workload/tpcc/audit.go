@@ -27,7 +27,9 @@ const (
 type auditor struct {
 	syncutil.Mutex
 
-	warehouses int
+	warehouses         int
+	affinityPartitions []int
+	part               *partitioner
 
 	// transaction counts
 	newOrderTransactions    atomic.Uint64
@@ -54,9 +56,11 @@ type auditor struct {
 	skippedDelivieries atomic.Uint64
 }
 
-func newAuditor(warehouses int) *auditor {
+func newAuditor(warehouses int, part *partitioner, affinityPartitions []int) *auditor {
 	return &auditor{
 		warehouses:                   warehouses,
+		part:                         part,
+		affinityPartitions:           affinityPartitions,
 		orderLinesFreq:               make(map[int]uint64),
 		orderLineRemoteWarehouseFreq: make(map[int]uint64),
 		paymentRemoteWarehouseFreq:   make(map[int]uint64),
@@ -104,6 +108,7 @@ func (a *auditor) runChecks(localWarehouses bool) {
 
 	for _, check := range checks {
 		result := check.f(a)
+		fmt.Println("Checking ........ ")
 		msg := fmt.Sprintf("Audit check %s: %s", check.name, result.status)
 		if result.description == "" {
 			fmt.Println(msg)
@@ -201,7 +206,6 @@ func check92253(a *auditor) auditResult {
 	if a.newOrderTransactions.Load() < minSignificantTransactions {
 		return newSkipResult("not enough orders to be statistically significant")
 	}
-
 	var remoteOrderLines uint64
 	for _, freq := range a.orderLineRemoteWarehouseFreq {
 		remoteOrderLines += freq
@@ -211,18 +215,45 @@ func check92253(a *auditor) auditResult {
 		return newFailResult(
 			"remote order-line percent %.1f is not between allowed bounds [0.95, 1.05]", remotePct)
 	}
-
 	// In the absence of a more sophisticated distribution check like a
 	// chi-squared test, check each warehouse is used as a remote warehouse at
 	// least once. We need the number of remote order-lines to be at least 15
 	// times the number of warehouses (experimentally determined) to have this
 	// expectation.
-	if remoteOrderLines < 15*uint64(a.warehouses) {
+	// paratition affinity - [0, 5, 10]
+	//
+	l := len(a.affinityPartitions)
+	if l == 0 {
+		l = 1
+	} else if a.part.parts != 0 {
+		l = a.part.parts / l
+	} else {
+		// Handle the case where a.part.parts is zero
+		l = 1 // or any other appropriate value
+	}
+	fmt.Printf(" l and affinity %d parts %d orderLine %d Limit %d\n", len(a.affinityPartitions), a.part.parts, remoteOrderLines, 15*(uint64(a.warehouses)/uint64(l)))
+
+	fmt.Printf(" l = %d  part = %d \n\n", l, a.part.parts)
+	if remoteOrderLines < 15*(uint64(a.warehouses)/uint64(l)) {
 		return newSkipResult("insufficient data for remote warehouse distribution check")
 	}
-	for i := 0; i < a.warehouses; i++ {
-		if _, ok := a.orderLineRemoteWarehouseFreq[i]; !ok {
-			return newFailResult("no remote order-lines for warehouses %d", i)
+
+	// todo(gourav) update this affinity partitions
+	if len(a.affinityPartitions) == 0 {
+		for i := 0; i < a.warehouses; i++ {
+			if _, ok := a.orderLineRemoteWarehouseFreq[i]; !ok {
+				return newFailResult("no remote order-lines for warehouses %d", i)
+			}
+		}
+	} else {
+		for _, i := range a.affinityPartitions {
+			fmt.Printf(" Checking partition : %d , partElemSize %d \n\n", i, len(a.part.partElems))
+			for _, p := range a.part.partElems[i] {
+				fmt.Printf("part elems : %d \n\n", p)
+				if _, ok := a.orderLineRemoteWarehouseFreq[p]; !ok {
+					return newFailResult("no remote order-lines for warehouses %d", i)
+				}
+			}
 		}
 	}
 
@@ -254,13 +285,38 @@ func check92254(a *auditor) auditResult {
 		return newFailResult(
 			"remote payment percent %.1f is not between allowed bounds [14, 16]", remotePct)
 	}
+	fmt.Printf(" l and affinity %d parts %d \n\n", len(a.affinityPartitions), a.part.parts)
+	l := len(a.affinityPartitions)
+	if l == 0 {
+		l = 1
+	} else if a.part.parts != 0 {
+		l = a.part.parts / l
+	} else {
+		// Handle the case where a.part.parts is zero
+		l = 1 // or any other appropriate value
+	}
+	fmt.Printf(" l = %d  part = %d remotePay %d Limit %d < \n\n", l, a.part.parts, remotePayments, 15*(uint64(a.warehouses)/uint64(l)))
 
-	if remotePayments < 15*uint64(a.warehouses) {
+	if remotePayments < 15*(uint64(a.warehouses)/uint64(l)) {
 		return newSkipResult("insufficient data for remote warehouse distribution check")
 	}
-	for i := 0; i < a.warehouses; i++ {
-		if _, ok := a.paymentRemoteWarehouseFreq[i]; !ok {
-			return newFailResult("no remote payments for warehouses %d", i)
+
+	// todo(gourav) update this affinity partitions
+	if len(a.affinityPartitions) == 0 {
+		for i := 0; i < a.warehouses; i++ {
+			if _, ok := a.paymentRemoteWarehouseFreq[i]; !ok {
+				return newFailResult("no remote payments for warehouses %d", i)
+			}
+		}
+	} else {
+		for _, i := range a.affinityPartitions {
+			fmt.Printf(" Checking partition : %d , partElemSize %d \n\n", i, len(a.part.partElems))
+			for _, p := range a.part.partElems[i] {
+				fmt.Printf("part elems : %d \n\n", p)
+				if _, ok := a.paymentRemoteWarehouseFreq[p]; !ok {
+					return newFailResult("no remote payments for warehouses %d", i)
+				}
+			}
 		}
 	}
 

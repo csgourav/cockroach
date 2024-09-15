@@ -426,7 +426,7 @@ func (w *tpcc) Hooks() workload.Hooks {
 				}
 			}
 
-			if w.waitFraction > 0 && w.workers != w.activeWarehouses*NumWorkersPerWarehouse {
+			if w.waitFraction > 0 && w.workers != w.activeWarehouses*NumWorkersPerWarehouse && len(w.affinityPartitions) == 0 {
 				return errors.Errorf(`--wait > 0 and --warehouses=%d requires --workers=%d`,
 					w.activeWarehouses, w.warehouses*NumWorkersPerWarehouse)
 			}
@@ -434,8 +434,6 @@ func (w *tpcc) Hooks() workload.Hooks {
 			if w.queryTraceFile != `` && w.workers != 1 {
 				return errors.Errorf(`--query-trace-file must be used with exactly one worker`)
 			}
-
-			w.auditor = newAuditor(w.activeWarehouses)
 
 			// Create a partitioner to help us partition the warehouses. The base-case is
 			// where w.warehouses == w.activeWarehouses and w.partitions == 1.
@@ -458,6 +456,12 @@ func (w *tpcc) Hooks() workload.Hooks {
 					return errors.Wrap(err, "error creating multi-region partitioner")
 				}
 			}
+
+			w.auditor = newAuditor(w.activeWarehouses, w.wPart, w.affinityPartitions)
+			fmt.Printf(" Audit Checks \n")
+			fmt.Printf(" Audit %d lenAffinity %d \n", w.auditor.warehouses, len(w.auditor.affinityPartitions))
+			fmt.Printf(" Partitions %d active %d total %d PartElems %d \n", w.auditor.part.parts, w.auditor.part.active, w.auditor.part.total, len(w.auditor.part.partElems))
+
 			return initializeMix(w)
 		},
 		PreCreate: func(db *gosql.DB) error {
@@ -571,9 +575,20 @@ func (w *tpcc) Hooks() workload.Hooks {
 			return w.partitionAndScatterWithDB(db)
 		},
 		PostRun: func(startElapsed time.Duration) error {
+
 			w.auditor.runChecks(w.localWarehouses)
 			const totalHeader = "\n_elapsed_______tpmC____efc__avg(ms)__p50(ms)__p90(ms)__p95(ms)__p99(ms)_pMax(ms)"
 			fmt.Println(totalHeader)
+
+			l := len(w.affinityPartitions)
+			if l == 0 {
+				l = 1
+			} else if w.wPart.parts != 0 {
+				l = w.wPart.parts / l
+			} else {
+				// Handle the case where a.part.parts is zero
+				l = 1 // or any other appropriate value
+			}
 
 			const newOrderName = `newOrder`
 			w.reg.Tick(func(t histogram.Tick) {
@@ -582,7 +597,7 @@ func (w *tpcc) Hooks() workload.Hooks {
 					fmt.Printf("%7.1fs %10.1f %5.1f%% %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f\n",
 						startElapsed.Seconds(),
 						tpmC,
-						100*tpmC/(SpecWarehouseFactor*float64(w.activeWarehouses)),
+						100*tpmC/(SpecWarehouseFactor*float64(w.activeWarehouses/l)),
 						time.Duration(t.Cumulative.Mean()).Seconds()*1000,
 						time.Duration(t.Cumulative.ValueAtQuantile(50)).Seconds()*1000,
 						time.Duration(t.Cumulative.ValueAtQuantile(90)).Seconds()*1000,
@@ -934,6 +949,8 @@ func (w *tpcc) Ops(
 		partitionDBs = make([][]*workload.MultiConnPool, w.partitions)
 	}
 
+	fmt.Printf("Client partiton %d total partitons %d", w.clientPartitions, w.partitions)
+
 	// If there is only one affinityPartition then we assume all of the URLs are
 	// associated with that partition.
 	if len(w.affinityPartitions) == 1 {
@@ -946,9 +963,16 @@ func (w *tpcc) Ops(
 		// URLs are mapped to partitions in a round-robin fashion.
 		// Imagine there are 5 partitions and 15 urls, this code assumes that urls
 		// 0, 5, and 10 correspond to the 0th partition.
-		for i, db := range dbs {
-			p := i % w.partitions
-			partitionDBs[p] = append(partitionDBs[p], db)
+		if len(w.affinityPartitions) == 0 {
+			for i, db := range dbs {
+				p := i % w.partitions
+				partitionDBs[p] = append(partitionDBs[p], db)
+			}
+		} else {
+			// todo(gourav): update this later if affinity partitions are < dbs[i] or > than !=
+			for i, p := range w.affinityPartitions {
+				partitionDBs[p] = append(partitionDBs[p], dbs[i])
+			}
 		}
 		for i := range partitionDBs {
 			// Possible if we have more partitions than DB connections.
@@ -957,6 +981,11 @@ func (w *tpcc) Ops(
 			}
 		}
 	}
+	fmt.Printf("--- Audit Checks \n")
+	fmt.Printf(" Audit %d lenAffinity %d \n", w.auditor.warehouses, len(w.auditor.affinityPartitions))
+	fmt.Printf(" Partitions %d active %d total %d PartElems %d \n", w.auditor.part.parts, w.auditor.part.active, w.auditor.part.total, len(w.auditor.part.partElems))
+
+	fmt.Printf("ParttionDbs size %d   input connection pools -should map to urls  - %d  \n", len(partitionDBs), len(dbs))
 
 	fmt.Printf("Initializing %d idle connections...\n", w.idleConns)
 	var conns []*pgx.Conn
@@ -978,6 +1007,12 @@ func (w *tpcc) Ops(
 	ql.WorkerFns = make([]func(context.Context) error, 0, w.workers)
 	var group errgroup.Group
 
+	fmt.Printf("Affinity Partitions : ")
+	for _, i := range w.affinityPartitions {
+		fmt.Printf(" %d ", i)
+	}
+
+	fmt.Printf("\n")
 	// Determines whether a partition is in the local workload's set of affinity
 	// partitions.
 	isMyPart := func(p int) bool {
@@ -989,16 +1024,57 @@ func (w *tpcc) Ops(
 		// If nothing is mine, then everything is mine.
 		return len(w.affinityPartitions) == 0
 	}
+	fmt.Printf(" Workers %d \n", w.workers)
+	fmt.Printf(" Active : %d   Total : %d   Parts : %d  \n", w.wPart.active, w.wPart.total, w.wPart.parts)
+	fmt.Printf(" Part Bounds   --------- \n")
+
+	fmt.Printf("333] Audit Checks \n")
+	fmt.Printf(" Audit %d lenAffinity %d \n", w.auditor.warehouses, len(w.auditor.affinityPartitions))
+	fmt.Printf(" Partitions %d active %d total %d PartElems %d \n", w.auditor.part.parts, w.auditor.part.active, w.auditor.part.total, len(w.auditor.part.partElems))
+
+	for _, i := range w.wPart.partBounds {
+		fmt.Printf(" %d ", i)
+	}
+	fmt.Printf("\n")
+	fmt.Printf(" Part Elems   --------- \n")
+	for _, i := range w.wPart.partElems {
+		fmt.Printf(" %d ", len(i))
+	}
+	fmt.Printf("\n")
+	fmt.Printf(" TOtal Elems : ------------------------\n")
+	for _, i := range w.wPart.totalElems {
+		fmt.Printf(" %d ", i)
+	}
+	fmt.Printf(" \n")
+
+	fmt.Printf(" Part  Elems : ===================== \n ")
+	for key, val := range w.wPart.partElemsMap {
+		fmt.Printf(" %d-%d ", key, val)
+	}
+	fmt.Printf(" \n")
+
+	fmt.Print("initilializing different workers \n")
+	var count int
 	// Limit the amount of workers we initialize in parallel, to avoid running out
 	// of memory (#36897).
 	sem := make(chan struct{}, 100)
+	var k int
+	k = -1
 	for workerIdx := 0; workerIdx < w.workers; workerIdx++ {
 		workerIdx := workerIdx
 		var warehouse int
 		var p int
 		if len(w.multiRegionCfg.regions) == 0 {
-			warehouse = w.wPart.totalElems[workerIdx%len(w.wPart.totalElems)]
-			p = w.wPart.partElemsMap[warehouse]
+			// todo (gourav): fix this later
+			for {
+				k = k + 1
+				warehouse = w.wPart.totalElems[k%len(w.wPart.totalElems)]
+				l := w.wPart.partElemsMap[warehouse]
+				if isMyPart(l) {
+					p = l
+					break
+				}
+			}
 		} else {
 			// For multi-region workloads, use the multi-region partitioning.
 			warehouse = w.wMRPart.totalElems[workerIdx%len(w.wMRPart.totalElems)]
@@ -1007,11 +1083,14 @@ func (w *tpcc) Ops(
 
 		// This isn't part of our local partition.
 		if !isMyPart(p) {
+			fmt.Printf(" Not part of affinity - partition p = %d\n", p)
 			continue
 		}
+		count = count + 1
 		dbs := partitionDBs[p]
 		db := dbs[warehouse%len(dbs)]
-
+		fmt.Printf("\n\t workedIdx - len totalElem : %d %d\n", workerIdx, len(w.wPart.totalElems))
+		fmt.Printf("\n warehouseID = %d  dbs len = %d - for partition p=%d \n", warehouse, len(dbs), p)
 		// NB: ql.WorkerFns is sized so this never re-allocs.
 		ql.WorkerFns = append(ql.WorkerFns, nil)
 		idx := len(ql.WorkerFns) - 1
@@ -1032,6 +1111,7 @@ func (w *tpcc) Ops(
 	for _, tx := range allTxs {
 		reg.GetHandle().Get(tx.name)
 	}
+	fmt.Printf(" Finally these many workers got created %d \n", count)
 
 	// Close idle connections.
 	ql.Close = func(_ context.Context) error {
