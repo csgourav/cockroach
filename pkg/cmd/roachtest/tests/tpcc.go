@@ -1017,7 +1017,7 @@ func registerTPCC(r registry.Registry) {
 	// Try on medium with 3 workload nodes, see if we can
 	// achieve similar performance
 	r.Add(registry.TestSpec{
-		Name:      "tpcc/published/medium-opt-multiworkloads",
+		Name:      "tpcc/published/medium-opti-multiworkloads",
 		Owner:     registry.OwnerKV,
 		Benchmark: true,
 		Cluster: spec.MakeClusterSpec(
@@ -1026,6 +1026,8 @@ func registerTPCC(r registry.Registry) {
 			//spec.GCEMachineType("n2-custom-16-32768"),
 			spec.GCEMachineType("n2-standard-16"),
 			spec.WorkloadNode(),
+			spec.WorkloadNodeCPU(16),
+			spec.WorkloadNodeCount(3),
 			spec.PreferLocalSSD(),
 			spec.ReuseNone(),
 		),
@@ -1035,12 +1037,12 @@ func registerTPCC(r registry.Registry) {
 		Timeout:           6 * time.Hour,
 		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
 			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
-				warehouses:        20000,
+				warehouses:        25000,
 				workloadCount:     3,
 				duration:          30 * time.Minute,
 				optimized:         true,
-				LoadWarehousesGCE: 19800,
-				LoadWarehousesAWS: 19800,
+				LoadWarehousesGCE: 20000,
+				LoadWarehousesAWS: 20000,
 			})
 		},
 	})
@@ -1107,11 +1109,13 @@ func registerTPCC(r registry.Registry) {
 		Owner:     registry.OwnerKV,
 		Benchmark: true,
 		Cluster: spec.MakeClusterSpec(
-			82,
+			84,
 			spec.AWSMachineType("c5d.9xlarge"),
 			//spec.GCEMachineType("n2-custom-32-65536"),
 			spec.GCEMachineType("n2-standard-32"),
 			spec.WorkloadNode(),
+			spec.WorkloadNodeCPU(32),
+			spec.WorkloadNodeCount(3),
 			spec.PreferLocalSSD(),
 			spec.ReuseNone(),
 		),
@@ -1122,7 +1126,7 @@ func registerTPCC(r registry.Registry) {
 		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
 			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
 				warehouses:        170000,
-				workloadCount:     1,
+				workloadCount:     3,
 				duration:          30 * time.Minute,
 				optimized:         true,
 				LoadWarehousesGCE: 140000,
@@ -1135,11 +1139,13 @@ func registerTPCC(r registry.Registry) {
 		Owner:     registry.OwnerKV,
 		Benchmark: true,
 		Cluster: spec.MakeClusterSpec(
-			82,
+			84,
 			spec.AWSMachineType("c5d.9xlarge"),
 			//spec.GCEMachineType("n2-custom-32-65536"),
 			spec.GCEMachineType("n2-standard-32"),
 			spec.WorkloadNode(),
+			spec.WorkloadNodeCPU(32),
+			spec.WorkloadNodeCount(3),
 			spec.PreferLocalSSD(),
 			spec.ReuseNone(),
 		),
@@ -2040,10 +2046,12 @@ func setupPrometheusForRoachtest(
 		t.Fatal(err)
 	}
 	cleanupFunc := func() {
+		fmt.Printf("Calling cleanup for grafana  up prometheus/grafana (artfact dir - %s)\n", t.ArtifactsDir())
 		if t.IsDebug() {
 			return // nothing to do
 		}
 		if err := c.StopGrafana(ctx, quietLogger, t.ArtifactsDir()); err != nil {
+			fmt.Printf("error in stopping grafana \n")
 			t.L().ErrorfCtx(ctx, "error(s) shutting down prom/grafana: %s", err)
 		}
 	}
@@ -2280,7 +2288,7 @@ func runTPCCPublished(
 				var cmd string
 				cmd = fmt.Sprintf(
 					"./cockroach1 workload run tpcc --warehouses=%d --active-warehouses=%d --workers=%d"+
-						" --histograms=%s --ramp=%s --duration=%s",
+						" --histograms=%s --ramp=%s --duration=%s --tolerate-errors ",
 					totalWarehouses,
 					warehouses,
 					((warehouses * 10) / 3),

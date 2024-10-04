@@ -429,6 +429,7 @@ func Snapshot(
 	promNode install.Nodes,
 	dir string,
 ) error {
+	fmt.Printf("Taking snapshot - going to run tar gz command on PromNode %d\n", promNode)
 	if err := c.Run(
 		ctx,
 		l,
@@ -441,6 +442,7 @@ func Snapshot(
 	); err != nil {
 		return err
 	}
+	fmt.Printf("Done creating running prom script for tar gz\n")
 	if err := os.WriteFile(filepath.Join(dir, "prometheus-docker-run.sh"), []byte(`#!/bin/sh
 set -eu
 
@@ -498,6 +500,7 @@ func Shutdown(
 		}
 		return nil
 	}
+	fmt.Printf("Taking prom snapshot on node : %d outOfTotalNodes %d \n", promNode, len(nodes))
 	var shutdownErr error
 	if dumpDir != "" {
 		if err := dumpSnapshot(dumpDir); err != nil {

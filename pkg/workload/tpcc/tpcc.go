@@ -14,6 +14,7 @@ import (
 	"context"
 	gosql "database/sql"
 	"fmt"
+	dto "github.com/prometheus/client_model/go"
 	"os"
 	"regexp"
 	"strconv"
@@ -577,7 +578,7 @@ func (w *tpcc) Hooks() workload.Hooks {
 		PostRun: func(startElapsed time.Duration) error {
 
 			w.auditor.runChecks(w.localWarehouses)
-			const totalHeader = "\n_elapsed_______tpmC____efc__avg(ms)__p50(ms)__p90(ms)__p95(ms)__p99(ms)_pMax(ms)"
+			const totalHeader = "\n_elapsed_______tpmC____efc__avg(ms)__p50(ms)__p90(ms)__p95(ms)__p99(ms)_pMax(ms)_failed"
 			fmt.Println(totalHeader)
 
 			l := len(w.affinityPartitions)
@@ -605,6 +606,12 @@ func (w *tpcc) Hooks() workload.Hooks {
 						time.Duration(t.Cumulative.ValueAtQuantile(99)).Seconds()*1000,
 						time.Duration(t.Cumulative.ValueAtQuantile(100)).Seconds()*1000,
 					)
+
+					metric := &dto.Metric{}
+					_ = w.txCounters[newOrderName].error.Write(metric)
+					fmt.Println("Error count newOrder value: ", metric.GetCounter().GetValue())
+					_ = w.txCounters[newOrderName].success.Write(metric)
+					fmt.Println("Success count newOrder value: ", metric.GetCounter().GetValue())
 				}
 			})
 			return nil

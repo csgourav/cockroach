@@ -102,8 +102,9 @@ type ClusterSpec struct {
 	// WorkloadNode indicates that the last node of the cluster should be a
 	// workload node. Defaults to a VM with 4 CPUs if not specified by
 	// WorkloadNodeCPUs.
-	WorkloadNode     bool
-	WorkloadNodeCPUs int
+	WorkloadNode      bool
+	WorkloadNodeCPUs  int
+	WorkloadNodeCount int
 	// CPUs is the number of CPUs per node.
 	CPUs                 int
 	Mem                  MemPerCPU
@@ -150,7 +151,7 @@ type ClusterSpec struct {
 // MakeClusterSpec makes a ClusterSpec.
 func MakeClusterSpec(nodeCount int, opts ...Option) ClusterSpec {
 	spec := ClusterSpec{NodeCount: nodeCount}
-	defaultOpts := []Option{CPU(4), WorkloadNodeCPU(4), nodeLifetime(12 * time.Hour), ReuseAny()}
+	defaultOpts := []Option{CPU(4), WorkloadNodeCPU(4), WorkloadNodeCount(1), nodeLifetime(12 * time.Hour), ReuseAny()}
 	for _, o := range append(defaultOpts, opts...) {
 		o(&spec)
 	}
@@ -569,5 +570,5 @@ func (s *ClusterSpec) TotalCPUs() int {
 	if !s.WorkloadNode {
 		return s.NodeCount * s.CPUs
 	}
-	return (s.NodeCount-1)*s.CPUs + s.WorkloadNodeCPUs
+	return (s.NodeCount-s.WorkloadNodeCount)*s.CPUs + s.WorkloadNodeCount*s.WorkloadNodeCPUs
 }

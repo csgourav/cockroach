@@ -14,6 +14,7 @@ package option
 type NodeLister struct {
 	NodeCount               int
 	WorkloadNodeProvisioned bool
+	WorkloadNodeCount       int
 	Fatalf                  func(string, ...interface{})
 }
 
@@ -25,7 +26,7 @@ func (l NodeLister) All() NodeListOption {
 // CRDBNodes returns a list of all CRDB nodes, i.e, non workload nodes.
 func (l NodeLister) CRDBNodes() NodeListOption {
 	if l.WorkloadNodeProvisioned {
-		return l.Range(1, l.NodeCount-1)
+		return l.Range(1, l.NodeCount-l.WorkloadNodeCount)
 	}
 	return l.Range(1, l.NodeCount)
 }

@@ -1004,8 +1004,8 @@ func (f *clusterFactory) newCluster(
 		// There isn't a point to creating a different sized vm for local clusters, so skip it.
 		if cfg.spec.WorkloadNode && !cfg.localCluster {
 			opts = []*cloud.ClusterCreateOpts{
-				{Nodes: cfg.spec.NodeCount - 1, CreateOpts: createVMOpts, ProviderOptsContainer: providerOptsContainer},
-				{Nodes: 1, CreateOpts: createVMOpts, ProviderOptsContainer: workloadProviderOptsContainer},
+				{Nodes: cfg.spec.NodeCount - cfg.spec.WorkloadNodeCount, CreateOpts: createVMOpts, ProviderOptsContainer: providerOptsContainer},
+				{Nodes: cfg.spec.WorkloadNodeCount, CreateOpts: createVMOpts, ProviderOptsContainer: workloadProviderOptsContainer},
 			}
 		}
 		err = create(ctx, l, cfg.username, opts...)

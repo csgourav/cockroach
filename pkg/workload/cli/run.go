@@ -576,15 +576,15 @@ func runRun(gen workload.Generator, urls []string, dbName string) error {
 		}()
 	}
 
-	everySecond := log.Every(*displayEvery)
+	//everySecond := log.Every(*displayEvery)
 	for {
 		select {
 		case err := <-errCh:
 			formatter.outputError(err)
 			if *tolerateErrors {
-				if everySecond.ShouldLog() {
-					log.Errorf(ctx, "%v", err)
-				}
+				//if everySecond.ShouldLog() {
+				log.Errorf(ctx, "%v", err)
+				//}
 				continue
 			}
 			// Log the error so we get the stack trace.
