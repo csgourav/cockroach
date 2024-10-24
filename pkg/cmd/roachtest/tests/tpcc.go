@@ -1078,6 +1078,63 @@ func registerTPCC(r registry.Registry) {
 		},
 	})
 	r.Add(registry.TestSpec{
+		Name:      "tpcc/published/medium-vanilla-multi",
+		Owner:     registry.OwnerKV,
+		Benchmark: true,
+		Cluster: spec.MakeClusterSpec(
+			18,
+			spec.AWSMachineType("c5d.4xlarge"),
+			//spec.GCEMachineType("n2-custom-16-32768"),
+			spec.GCEMachineType("n2-standard-16"),
+			spec.WorkloadNode(),
+			spec.WorkloadNodeCPU(16),
+			spec.WorkloadNodeCount(3),
+			spec.PreferLocalSSD(),
+			spec.ReuseNone(),
+		),
+		CompatibleClouds:  registry.AllClouds,
+		Suites:            registry.ManualOnly,
+		EncryptionSupport: registry.EncryptionAlwaysDisabled,
+		Timeout:           6 * time.Hour,
+		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
+			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
+				warehouses:        16000,
+				workloadCount:     3,
+				duration:          30 * time.Minute,
+				LoadWarehousesGCE: 14000,
+				LoadWarehousesAWS: 14000,
+			})
+		},
+	})
+	r.Add(registry.TestSpec{
+		Name:      "tpcc/published/multi-medium-vanilla",
+		Owner:     registry.OwnerKV,
+		Benchmark: true,
+		Cluster: spec.MakeClusterSpec(
+			18,
+			spec.AWSMachineType("c5d.4xlarge"),
+			//spec.GCEMachineType("n2-custom-16-32768"),
+			spec.GCEMachineType("n2-standard-16"),
+			spec.WorkloadNode(),
+			spec.WorkloadNodeCPU(8),
+			spec.PreferLocalSSD(),
+			spec.ReuseNone(),
+		),
+		CompatibleClouds:  registry.AllClouds,
+		Suites:            registry.ManualOnly,
+		EncryptionSupport: registry.EncryptionAlwaysDisabled,
+		Timeout:           6 * time.Hour,
+		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
+			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
+				warehouses:        16000,
+				workloadCount:     3,
+				duration:          30 * time.Minute,
+				LoadWarehousesGCE: 14000,
+				LoadWarehousesAWS: 14000,
+			})
+		},
+	})
+	r.Add(registry.TestSpec{
 		Name:      "tpcc/published/medium-vanilla",
 		Owner:     registry.OwnerKV,
 		Benchmark: true,
@@ -1105,7 +1162,7 @@ func registerTPCC(r registry.Registry) {
 		},
 	})
 	r.Add(registry.TestSpec{
-		Name:      "tpcc/published/large-optimized",
+		Name:      "tpcc/published/multi-large-optimized",
 		Owner:     registry.OwnerKV,
 		Benchmark: true,
 		Cluster: spec.MakeClusterSpec(
@@ -1113,6 +1170,7 @@ func registerTPCC(r registry.Registry) {
 			spec.AWSMachineType("c5d.9xlarge"),
 			//spec.GCEMachineType("n2-custom-32-65536"),
 			spec.GCEMachineType("n2-standard-32"),
+			spec.Mem(spec.Standard),
 			spec.WorkloadNode(),
 			spec.WorkloadNodeCPU(32),
 			spec.WorkloadNodeCount(3),
@@ -1125,8 +1183,39 @@ func registerTPCC(r registry.Registry) {
 		Timeout:           12 * time.Hour,
 		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
 			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
-				warehouses:        170000,
+				warehouses:        160000,
 				workloadCount:     3,
+				duration:          30 * time.Minute,
+				optimized:         true,
+				LoadWarehousesGCE: 140000,
+				LoadWarehousesAWS: 140000,
+			})
+		},
+	})
+	r.Add(registry.TestSpec{
+		Name:      "tpcc/published/large-optimized",
+		Owner:     registry.OwnerKV,
+		Benchmark: true,
+		Cluster: spec.MakeClusterSpec(
+			82,
+			spec.AWSMachineType("c5d.9xlarge"),
+			//spec.GCEMachineType("n2-custom-32-65536"),
+			spec.GCEMachineType("n2-standard-32"),
+			spec.Mem(spec.Standard),
+			spec.WorkloadNode(),
+			spec.WorkloadNodeCPU(64),
+			spec.WorkloadNodeCount(1),
+			spec.PreferLocalSSD(),
+			spec.ReuseNone(),
+		),
+		CompatibleClouds:  registry.AllClouds,
+		Suites:            registry.ManualOnly,
+		EncryptionSupport: registry.EncryptionAlwaysDisabled,
+		Timeout:           12 * time.Hour,
+		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
+			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
+				warehouses:        145000,
+				workloadCount:     1,
 				duration:          30 * time.Minute,
 				optimized:         true,
 				LoadWarehousesGCE: 140000,
@@ -1143,6 +1232,7 @@ func registerTPCC(r registry.Registry) {
 			spec.AWSMachineType("c5d.9xlarge"),
 			//spec.GCEMachineType("n2-custom-32-65536"),
 			spec.GCEMachineType("n2-standard-32"),
+			spec.Mem(spec.Standard),
 			spec.WorkloadNode(),
 			spec.WorkloadNodeCPU(32),
 			spec.WorkloadNodeCount(3),
@@ -1156,7 +1246,7 @@ func registerTPCC(r registry.Registry) {
 		Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
 			runTPCCPublished(ctx, t, c, tpccPublishedOptions{
 				warehouses:        120000,
-				workloadCount:     1,
+				workloadCount:     3,
 				duration:          30 * time.Minute,
 				LoadWarehousesGCE: 100000,
 				LoadWarehousesAWS: 100000,
@@ -2291,7 +2381,7 @@ func runTPCCPublished(
 						" --histograms=%s --ramp=%s --duration=%s --tolerate-errors ",
 					totalWarehouses,
 					warehouses,
-					((warehouses * 10) / 3),
+					((warehouses * 10) / opts.workloadCount),
 					histogramsPath,
 					rampTime,
 					opts.duration,
@@ -2305,7 +2395,7 @@ func runTPCCPublished(
 						w.crdbNodes.String(),
 					)
 				} else {
-					cmdSuffix = fmt.Sprintf(" {pgurl%s}", crdbNodes.String())
+					cmdSuffix = fmt.Sprintf(" {pgurl%s}", w.crdbNodes.String())
 				}
 				cmd += cmdSuffix
 				t.L().Printf("running %s", cmd)

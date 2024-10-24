@@ -291,7 +291,9 @@ func workerRun(
 				// that has been canceled. See https://github.com/lib/pq/pull/1000
 				return
 			}
+			//if !*tolerateErrors {
 			errCh <- err
+			//}
 			if !*countErrors {
 				// Continue to the next iteration of the infinite loop only if
 				// we are not counting the errors.
@@ -576,15 +578,15 @@ func runRun(gen workload.Generator, urls []string, dbName string) error {
 		}()
 	}
 
-	//everySecond := log.Every(*displayEvery)
+	everySecond := log.Every(*displayEvery)
 	for {
 		select {
 		case err := <-errCh:
 			formatter.outputError(err)
 			if *tolerateErrors {
-				//if everySecond.ShouldLog() {
-				log.Errorf(ctx, "%v", err)
-				//}
+				if everySecond.ShouldLog() {
+					log.Errorf(ctx, "%v", err)
+				}
 				continue
 			}
 			// Log the error so we get the stack trace.

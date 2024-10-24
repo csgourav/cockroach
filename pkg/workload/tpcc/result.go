@@ -64,6 +64,9 @@ type Result struct {
 	// Elapsed is the amount of time captured by the Cumulative.
 	Elapsed time.Duration
 
+	// Num errors
+	NumError int
+
 	// WarehouseFactor is the maximal number of newOrder transactions per second
 	// per Warehouse. If zero it defaults to DeckWarehouseFactor which is derived
 	// from this workload. The value is used to compute the efficiency of the run.
@@ -197,5 +200,6 @@ func (r *Result) FailureError() error {
 					query, v, max90th))
 		}
 	}
+
 	return err
 }

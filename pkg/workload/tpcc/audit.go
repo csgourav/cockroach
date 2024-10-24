@@ -231,9 +231,9 @@ func check92253(a *auditor) auditResult {
 		// Handle the case where a.part.parts is zero
 		l = 1 // or any other appropriate value
 	}
-	fmt.Printf(" l and affinity %d parts %d orderLine %d Limit %d\n", len(a.affinityPartitions), a.part.parts, remoteOrderLines, 15*(uint64(a.warehouses)/uint64(l)))
+	//fmt.Printf(" l and affinity %d parts %d orderLine %d Limit %d\n", len(a.affinityPartitions), a.part.parts, remoteOrderLines, 15*(uint64(a.warehouses)/uint64(l)))
 
-	fmt.Printf(" l = %d  part = %d \n\n", l, a.part.parts)
+	//fmt.Printf(" l = %d  part = %d \n\n", l, a.part.parts)
 	if remoteOrderLines < 15*(uint64(a.warehouses)/uint64(l)) {
 		return newSkipResult("insufficient data for remote warehouse distribution check")
 	}
@@ -247,9 +247,9 @@ func check92253(a *auditor) auditResult {
 		}
 	} else {
 		for _, i := range a.affinityPartitions {
-			fmt.Printf(" Checking partition : %d , partElemSize %d \n\n", i, len(a.part.partElems))
+			//fmt.Printf(" Checking partition : %d , partElemSize %d \n\n", i, len(a.part.partElems))
 			for _, p := range a.part.partElems[i] {
-				fmt.Printf("part elems : %d \n\n", p)
+				//fmt.Printf("part elems : %d \n\n", p)
 				if _, ok := a.orderLineRemoteWarehouseFreq[p]; !ok {
 					return newFailResult("no remote order-lines for warehouses %d", i)
 				}
@@ -310,9 +310,9 @@ func check92254(a *auditor) auditResult {
 		}
 	} else {
 		for _, i := range a.affinityPartitions {
-			fmt.Printf(" Checking partition : %d , partElemSize %d \n\n", i, len(a.part.partElems))
+			// fmt.Printf(" Checking partition : %d , partElemSize %d \n\n", i, len(a.part.partElems))
 			for _, p := range a.part.partElems[i] {
-				fmt.Printf("part elems : %d \n\n", p)
+				// fmt.Printf("part elems : %d \n\n", p)
 				if _, ok := a.paymentRemoteWarehouseFreq[p]; !ok {
 					return newFailResult("no remote payments for warehouses %d", i)
 				}

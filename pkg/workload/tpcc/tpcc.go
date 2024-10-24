@@ -14,7 +14,6 @@ import (
 	"context"
 	gosql "database/sql"
 	"fmt"
-	dto "github.com/prometheus/client_model/go"
 	"os"
 	"regexp"
 	"strconv"
@@ -423,7 +422,12 @@ func (w *tpcc) Hooks() workload.Hooks {
 				if w.waitFraction == 0 {
 					w.numConns = w.workers
 				} else {
-					w.numConns = w.activeWarehouses * numConnsPerWarehouse
+					afinityLen := len(w.affinityPartitions)
+					w.numConns = (w.activeWarehouses * numConnsPerWarehouse)
+
+					if afinityLen != 0 {
+						w.numConns = w.numConns / (w.partitions / afinityLen)
+					}
 				}
 			}
 
@@ -459,9 +463,9 @@ func (w *tpcc) Hooks() workload.Hooks {
 			}
 
 			w.auditor = newAuditor(w.activeWarehouses, w.wPart, w.affinityPartitions)
-			fmt.Printf(" Audit Checks \n")
-			fmt.Printf(" Audit %d lenAffinity %d \n", w.auditor.warehouses, len(w.auditor.affinityPartitions))
-			fmt.Printf(" Partitions %d active %d total %d PartElems %d \n", w.auditor.part.parts, w.auditor.part.active, w.auditor.part.total, len(w.auditor.part.partElems))
+			//fmt.Printf(" Audit Checks \n")
+			//fmt.Printf(" Audit %d lenAffinity %d \n", w.auditor.warehouses, len(w.auditor.affinityPartitions))
+			//fmt.Printf(" Partitions %d active %d total %d PartElems %d \n", w.auditor.part.parts, w.auditor.part.active, w.auditor.part.total, len(w.auditor.part.partElems))
 
 			return initializeMix(w)
 		},
@@ -606,12 +610,6 @@ func (w *tpcc) Hooks() workload.Hooks {
 						time.Duration(t.Cumulative.ValueAtQuantile(99)).Seconds()*1000,
 						time.Duration(t.Cumulative.ValueAtQuantile(100)).Seconds()*1000,
 					)
-
-					metric := &dto.Metric{}
-					_ = w.txCounters[newOrderName].error.Write(metric)
-					fmt.Println("Error count newOrder value: ", metric.GetCounter().GetValue())
-					_ = w.txCounters[newOrderName].success.Write(metric)
-					fmt.Println("Success count newOrder value: ", metric.GetCounter().GetValue())
 				}
 			})
 			return nil
@@ -891,6 +889,7 @@ func (w *tpcc) Ops(
 	// startup can be slow).
 	cfg.MaxConnsPerPool = w.connFlags.Concurrency
 	fmt.Printf("Initializing %d connections...\n", w.numConns)
+	fmt.Printf("Max Total connections %d Max connections per pool %d ... \n", cfg.MaxTotalConnections, cfg.MaxConnsPerPool)
 
 	// If queries were specified before each operation, then lets
 	// execute those.
@@ -956,7 +955,7 @@ func (w *tpcc) Ops(
 		partitionDBs = make([][]*workload.MultiConnPool, w.partitions)
 	}
 
-	fmt.Printf("Client partiton %d total partitons %d", w.clientPartitions, w.partitions)
+	//fmt.Printf("Client partiton %d total partitons %d", w.clientPartitions, w.partitions)
 
 	// If there is only one affinityPartition then we assume all of the URLs are
 	// associated with that partition.
@@ -988,13 +987,13 @@ func (w *tpcc) Ops(
 			}
 		}
 	}
-	fmt.Printf("--- Audit Checks \n")
-	fmt.Printf(" Audit %d lenAffinity %d \n", w.auditor.warehouses, len(w.auditor.affinityPartitions))
-	fmt.Printf(" Partitions %d active %d total %d PartElems %d \n", w.auditor.part.parts, w.auditor.part.active, w.auditor.part.total, len(w.auditor.part.partElems))
-
-	fmt.Printf("ParttionDbs size %d   input connection pools -should map to urls  - %d  \n", len(partitionDBs), len(dbs))
-
-	fmt.Printf("Initializing %d idle connections...\n", w.idleConns)
+	//fmt.Printf("--- Audit Checks \n")
+	//fmt.Printf(" Audit %d lenAffinity %d \n", w.auditor.warehouses, len(w.auditor.affinityPartitions))
+	//fmt.Printf(" Partitions %d active %d total %d PartElems %d \n", w.auditor.part.parts, w.auditor.part.active, w.auditor.part.total, len(w.auditor.part.partElems))
+	//
+	//fmt.Printf("ParttionDbs size %d   input connection pools -should map to urls  - %d  \n", len(partitionDBs), len(dbs))
+	//
+	//fmt.Printf("Initializing %d idle connections...\n", w.idleConns)
 	var conns []*pgx.Conn
 	for i := 0; i < w.idleConns; i++ {
 		for _, url := range urls {
@@ -1014,12 +1013,12 @@ func (w *tpcc) Ops(
 	ql.WorkerFns = make([]func(context.Context) error, 0, w.workers)
 	var group errgroup.Group
 
-	fmt.Printf("Affinity Partitions : ")
-	for _, i := range w.affinityPartitions {
-		fmt.Printf(" %d ", i)
-	}
+	//fmt.Printf("Affinity Partitions : ")
+	//for _, i := range w.affinityPartitions {
+	//	fmt.Printf(" %d ", i)
+	//}
 
-	fmt.Printf("\n")
+	//fmt.Printf("\n")
 	// Determines whether a partition is in the local workload's set of affinity
 	// partitions.
 	isMyPart := func(p int) bool {
@@ -1043,22 +1042,22 @@ func (w *tpcc) Ops(
 		fmt.Printf(" %d ", i)
 	}
 	fmt.Printf("\n")
-	fmt.Printf(" Part Elems   --------- \n")
-	for _, i := range w.wPart.partElems {
-		fmt.Printf(" %d ", len(i))
-	}
-	fmt.Printf("\n")
-	fmt.Printf(" TOtal Elems : ------------------------\n")
-	for _, i := range w.wPart.totalElems {
-		fmt.Printf(" %d ", i)
-	}
-	fmt.Printf(" \n")
-
-	fmt.Printf(" Part  Elems : ===================== \n ")
-	for key, val := range w.wPart.partElemsMap {
-		fmt.Printf(" %d-%d ", key, val)
-	}
-	fmt.Printf(" \n")
+	//fmt.Printf(" Part Elems   --------- \n")
+	//for _, i := range w.wPart.partElems {
+	//	fmt.Printf(" %d ", len(i))
+	//}
+	//fmt.Printf("\n")
+	//fmt.Printf(" TOtal Elems : ------------------------\n")
+	//for _, i := range w.wPart.totalElems {
+	//	fmt.Printf(" %d ", i)
+	//}
+	//fmt.Printf(" \n")
+	//
+	//fmt.Printf(" Part  Elems : ===================== \n ")
+	//for key, val := range w.wPart.partElemsMap {
+	//	fmt.Printf(" %d-%d ", key, val)
+	//}
+	//fmt.Printf(" \n")
 
 	fmt.Print("initilializing different workers \n")
 	var count int

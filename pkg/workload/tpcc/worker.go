@@ -238,7 +238,7 @@ func (w *worker) run(ctx context.Context) error {
 	}
 	if err != nil {
 		w.counters[txInfo.name].error.Inc()
-		return errors.Wrapf(err, "error printed in %s", txInfo.name)
+		return errors.Wrapf(err, "error printed in warehouse=%d %s", w.warehouse, txInfo.name)
 	}
 
 	w.counters[txInfo.name].success.Inc()
