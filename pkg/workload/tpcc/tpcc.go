@@ -102,6 +102,7 @@ type tpcc struct {
 	scatter bool
 
 	partitions         int
+	ignoreParts        bool
 	clientPartitions   int
 	affinityPartitions []int
 	wPart              *partitioner
@@ -245,6 +246,7 @@ var tpccMeta = workload.Meta{
 		g.flags.Meta = map[string]workload.FlagMeta{
 			`mix`:                      {RuntimeOnly: true},
 			`partitions`:               {RuntimeOnly: true},
+			`ignore-partitions`:        {RuntimeOnly: true},
 			`client-partitions`:        {RuntimeOnly: true},
 			`partition-affinity`:       {RuntimeOnly: true},
 			`partition-strategy`:       {RuntimeOnly: true},
@@ -287,6 +289,7 @@ var tpccMeta = workload.Meta{
 		g.flags.IntVar(&g.idleConns, `idle-conns`, 0, `Number of idle connections. Defaults to 0`)
 		g.flags.BoolVar(&g.txnRetries, `txn-retries`, true, `Run transactions in a retry loop`)
 		g.flags.IntVar(&g.partitions, `partitions`, 1, `Partition tables`)
+		g.flags.BoolVar(&g.ignoreParts, `ignore-partitions`, false, `Ignore partitions during load generation`)
 		g.flags.IntVar(&g.clientPartitions, `client-partitions`, 0, `Make client behave as if the tables are partitioned, but does not actually partition underlying data. Requires --partition-affinity.`)
 		g.flags.IntSliceVar(&g.affinityPartitions, `partition-affinity`, nil, `Run load generator against specific partition (requires partitions). `+
 			`Note that if one value is provided, the assumption is that all urls are associated with that partition. In all other cases the assumption `+
@@ -1192,6 +1195,10 @@ func (w *tpcc) partitionAndScatter(urls []string) error {
 
 func (w *tpcc) partitionAndScatterWithDB(db *gosql.DB) error {
 	if w.partitions > 1 {
+
+		if w.ignoreParts {
+			return nil
+		}
 		// Repartitioning can take upwards of 10 minutes, so determine if
 		// the dataset is already partitioned before launching the operation
 		// again.
