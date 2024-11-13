@@ -103,6 +103,7 @@ type tpcc struct {
 
 	partitions         int
 	ignoreParts        bool
+	partitionBeforeRun bool
 	clientPartitions   int
 	affinityPartitions []int
 	wPart              *partitioner
@@ -290,6 +291,7 @@ var tpccMeta = workload.Meta{
 		g.flags.BoolVar(&g.txnRetries, `txn-retries`, true, `Run transactions in a retry loop`)
 		g.flags.IntVar(&g.partitions, `partitions`, 1, `Partition tables`)
 		g.flags.BoolVar(&g.ignoreParts, `ignore-partitions`, false, `Ignore partitions during load generation`)
+		g.flags.BoolVar(&g.partitionBeforeRun, `partition-before-run`, false, `Partitions before run during load generation`)
 		g.flags.IntVar(&g.clientPartitions, `client-partitions`, 0, `Make client behave as if the tables are partitioned, but does not actually partition underlying data. Requires --partition-affinity.`)
 		g.flags.IntSliceVar(&g.affinityPartitions, `partition-affinity`, nil, `Run load generator against specific partition (requires partitions). `+
 			`Note that if one value is provided, the assumption is that all urls are associated with that partition. In all other cases the assumption `+
@@ -1197,6 +1199,12 @@ func (w *tpcc) partitionAndScatterWithDB(db *gosql.DB) error {
 	if w.partitions > 1 {
 
 		if w.ignoreParts {
+			return nil
+		}
+		if w.partitionBeforeRun {
+			if err := partitionTables(db, w.zoneCfg, w.wPart, w.replicateStaticColumns); err != nil {
+				return errors.Wrapf(err, "could not partition tables")
+			}
 			return nil
 		}
 		// Repartitioning can take upwards of 10 minutes, so determine if
